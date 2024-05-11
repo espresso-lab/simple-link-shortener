@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  links:
+    build: .
+    develop:
+      watch:
+        - path: ./backend/src
+          action: rebuild
+        - path: ./ui
+          action: rebuild
+    environment:
+      CORS_ALLOW_ORIGINS: "*"
+    ports:
+      - 3000:3000

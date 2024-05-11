@@ -1,0 +1,5 @@
+.dockerignore
+target
+node_modules
+.gitkeep
+*.db*
