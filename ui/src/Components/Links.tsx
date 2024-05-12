@@ -1,9 +1,10 @@
-import { Suspense, use, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useNotifications } from "../Context";
 import CopyIcon from "../Icons/copy.svg";
 import PlusIcon from "../Icons/plus.svg";
 import TrashIcon from "../Icons/trash.svg";
 import classes from "./Links.module.scss";
+import { copy } from "../Utils";
 
 interface Link {
   id: string;
@@ -14,8 +15,11 @@ interface Link {
   updated_at: string;
 }
 
+const hostname =
+  location.hostname === "localhost" ? "http://localhost:3000" : "";
+
 async function fetchLinks(): Promise<Link[]> {
-  const response = await fetch("/links");
+  const response = await fetch(`${hostname}/links`);
   return response.json();
 }
 
@@ -38,13 +42,12 @@ function Button({ icon, onClick, isSubmit }: ButtonProps) {
 }
 
 interface LinkProps {
-  fetchLinks: Promise<Link[]>;
+  links: Link[];
   refetch: () => void;
 }
 
-function Link({ fetchLinks, refetch }: LinkProps) {
-  const links = use(fetchLinks);
-  const notifications = useNotifications();
+function Link({ links, refetch }: LinkProps) {
+  const { notify } = useNotifications();
   return links.map((link) => (
     <div key={link.id} className={classes.link}>
       <p style={{ flex: 1 }}>{link.title}</p>
@@ -53,17 +56,17 @@ function Link({ fetchLinks, refetch }: LinkProps) {
       <Button
         icon={TrashIcon}
         onClick={() =>
-          fetch(`/links/${link.id}`, { method: "DELETE" })
+          fetch(`${hostname}/links/${link.id}`, { method: "DELETE" })
             .then(() => {
               refetch();
-              notifications.notify({
-                message: "Link deleted",
+              notify({
+                message: "Link deleted.",
                 type: "success",
               });
             })
             .catch(() => {
-              notifications.notify({
-                message: "Failed to delete link",
+              notify({
+                message: "Failed to delete link.",
                 type: "error",
               });
             })
@@ -71,12 +74,16 @@ function Link({ fetchLinks, refetch }: LinkProps) {
       />
       <Button
         icon={CopyIcon}
-        onClick={() => {
-          navigator.clipboard.writeText(`${document.location}${link.slug}`);
-          notifications.notify({
-            message: "Link copied to clipboard",
-          });
-        }}
+        onClick={() =>
+          copy(`${document.location}${link.slug}`)
+            .then(() =>
+              notify({
+                type: "success",
+                message: "Link copied to clipboard.",
+              })
+            )
+            .catch((error: string) => notify({ type: "error", message: error }))
+        }
       />
     </div>
   ));
@@ -89,27 +96,30 @@ interface FormValues {
 }
 
 export function Links() {
-  const notifications = useNotifications();
-  const [fetchLinksPromise, setFetchLinksPromise] = useState<Promise<Link[]>>(
-    () => fetchLinks()
-  );
+  const [links, setLinks] = useState<Link[]>([]);
+  const { notify } = useNotifications();
   const [formValues, setFormValues] = useState<FormValues>({
     url: "",
     title: "",
     slug: "",
   });
+
+  useEffect(() => {
+    fetchLinks().then(setLinks);
+  }, []);
+
   return (
     <div className={classes.container}>
       <h3>Links</h3>
       <form
-        action={() => {
+        onSubmit={(event) => {
           if (!formValues.url || !formValues.title || !formValues.slug) {
-            notifications.notify({
-              message: "All fields are required",
+            notify({
+              message: "Please provide all fields.",
               type: "error",
             });
           } else {
-            fetch("/links", {
+            fetch(`${hostname}/links`, {
               method: "POST",
               body: JSON.stringify(formValues),
               headers: {
@@ -122,19 +132,20 @@ export function Links() {
                   title: "",
                   slug: "",
                 });
-                setFetchLinksPromise(() => fetchLinks());
-                notifications.notify({
-                  message: "Link created",
+                fetchLinks().then(setLinks);
+                notify({
+                  message: "Link created.",
                   type: "success",
                 });
               })
               .catch(() => {
-                notifications.notify({
-                  message: "Failed to create link",
+                notify({
+                  message: "Failed to create link.",
                   type: "error",
                 });
               });
           }
+          event.preventDefault();
         }}
       >
         <div className={classes.form}>
@@ -171,10 +182,7 @@ export function Links() {
       </form>
       <Suspense fallback={<div>Loading...</div>}>
         <div className={classes.links}>
-          <Link
-            fetchLinks={fetchLinksPromise}
-            refetch={() => setFetchLinksPromise(() => fetchLinks())}
-          />
+          <Link links={links} refetch={() => fetchLinks().then(setLinks)} />
         </div>
       </Suspense>
     </div>
