@@ -1,11 +1,3 @@
-@function light-dark($light, $dark) {
-  @if (prefers-color-scheme: dark) {
-    @return $dark;
-  } @else {
-    @return $light;
-  }
-}
-
 :root {
   // Colors
   --primary-dark: #c625ee;
