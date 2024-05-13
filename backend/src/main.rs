@@ -71,7 +71,11 @@ async fn create_link(req: &mut Request, res: &mut Response) {
         .await
     {
         Ok(_) => res.status_code(StatusCode::CREATED),
-        Err(_) => res.status_code(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(err) => {
+            res.status_code(StatusCode::UNPROCESSABLE_ENTITY)
+                .render(Text::Json(format!("{{\"message\": \"{}\"}}", err)));
+            return;
+        }
     };
 }
 
@@ -127,7 +131,7 @@ async fn create_schema(db_url: &str) -> Result<SqliteQueryResult, Error> {
         CREATE TABLE IF NOT EXISTS links (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
-            slug TEXT NOT NULL,
+            slug TEXT NOT NULL UNIQUE,
             url TEXT NOT NULL,
             created_at DATETIME DEFAULT (datetime('now', 'localtime')),
             updated_at DATETIME DEFAULT (datetime('now', 'localtime'))

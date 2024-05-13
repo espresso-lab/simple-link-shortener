@@ -126,17 +126,35 @@ export function Links() {
                 "Content-Type": "application/json",
               },
             })
-              .then(() => {
-                setFormValues({
-                  url: "",
-                  title: "",
-                  slug: "",
-                });
-                fetchLinks().then(setLinks);
-                notify({
-                  message: "Link created.",
-                  type: "success",
-                });
+              .then(async (res) => {
+                if (!res.ok) {
+                  switch (res.status) {
+                    case 422:
+                      notify({
+                        message:
+                          "Slug is already taken. Please choose another.",
+                        type: "error",
+                      });
+                      break;
+                    default:
+                      notify({
+                        message: "Failed to create link.",
+                        type: "error",
+                      });
+                      break;
+                  }
+                } else {
+                  notify({
+                    message: "Link created.",
+                    type: "success",
+                  });
+                  setFormValues({
+                    url: "",
+                    title: "",
+                    slug: "",
+                  });
+                  fetchLinks().then(setLinks);
+                }
               })
               .catch(() => {
                 notify({
