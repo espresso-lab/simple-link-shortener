@@ -1,7 +1,7 @@
-version: "3.9"
+version: "3"
 
 services:
-  links:
+  simple-link-shortener:
     build: .
     develop:
       watch:
