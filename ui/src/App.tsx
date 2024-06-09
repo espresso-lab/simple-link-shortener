@@ -1,15 +1,24 @@
-import { Links } from "./Components";
+import "@mantine/core/styles.css";
+import { Container, MantineProvider } from "@mantine/core";
+import { LinkList } from "./Components/LinkList";
 
 export default function App() {
   return (
-    <div
-      style={{
-        margin: "5%",
-        display: "flex",
-        flex: 1,
+    <MantineProvider
+      theme={{
+        primaryColor: "violet",
       }}
     >
-      <Links />
-    </div>
+      <Container
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+        }}
+      >
+        <LinkList />
+      </Container>
+    </MantineProvider>
   );
 }
