@@ -70,7 +70,7 @@ async fn create_link(req: &mut Request, res: &mut Response) {
             return;
         }
     };
-    let query = "INSERT INTO links (slug, url) VALUES (?, ?, ?)";
+    let query = "INSERT INTO links (slug, url) VALUES (?, ?)";
     match sqlx::query(query)
         .bind(&link.slug)
         .bind(&link.url)
@@ -111,14 +111,13 @@ async fn update_link(req: &mut Request, res: &mut Response) {
 }
 
 #[handler]
-async fn delete_link(req: &mut Request, _res: &mut Response) {
+async fn delete_link(req: &mut Request, res: &mut Response) {
     let id = req.params().get("id").cloned().unwrap_or_default();
     let query = "DELETE FROM links WHERE id = ?";
-    sqlx::query(query)
-        .bind(id)
-        .execute(get_sqlite())
-        .await
-        .unwrap();
+    match sqlx::query(query).bind(id).execute(get_sqlite()).await {
+        Ok(_) => res.status_code(StatusCode::NO_CONTENT),
+        Err(_) => res.status_code(StatusCode::INTERNAL_SERVER_ERROR),
+    };
 }
 
 #[handler]
