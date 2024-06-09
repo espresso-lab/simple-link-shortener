@@ -6,9 +6,11 @@ use salvo::{
     prelude::*,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::{
     migrate::MigrateDatabase, sqlite::SqliteQueryResult, Error, FromRow, Sqlite, SqlitePool,
 };
+use tokio::join;
 
 static CORS_ALLOW_ORIGINS: Lazy<String> =
     Lazy::new(|| env::var("CORS_ALLOW_ORIGINS").unwrap_or("*".to_string()));
@@ -22,7 +24,6 @@ fn get_sqlite() -> &'static SqlitePool {
 #[derive(FromRow, Serialize, Deserialize, Debug)]
 struct Link {
     id: Option<i64>,
-    title: String,
     slug: String,
     url: String,
     created_at: Option<String>,
@@ -61,10 +62,16 @@ async fn get_link_by_id(req: &mut Request, res: &mut Response) {
 
 #[handler]
 async fn create_link(req: &mut Request, res: &mut Response) {
-    let link = req.parse_json::<Link>().await.unwrap();
-    let query = "INSERT INTO links (title, slug, url) VALUES (?, ?, ?)";
+    let link = match req.parse_json::<Link>().await {
+        Ok(link) => link,
+        Err(err) => {
+            res.status_code(StatusCode::UNPROCESSABLE_ENTITY)
+                .render(Text::Json(json!({ "error": err.to_string() }).to_string()));
+            return;
+        }
+    };
+    let query = "INSERT INTO links (slug, url) VALUES (?, ?, ?)";
     match sqlx::query(query)
-        .bind(&link.title)
         .bind(&link.slug)
         .bind(&link.url)
         .execute(get_sqlite())
@@ -73,7 +80,7 @@ async fn create_link(req: &mut Request, res: &mut Response) {
         Ok(_) => res.status_code(StatusCode::CREATED),
         Err(err) => {
             res.status_code(StatusCode::UNPROCESSABLE_ENTITY)
-                .render(Text::Json(format!("{{\"message\": \"{}\"}}", err)));
+                .render(Text::Json(json!({ "error": err.to_string() }).to_string()));
             return;
         }
     };
@@ -82,10 +89,16 @@ async fn create_link(req: &mut Request, res: &mut Response) {
 #[handler]
 async fn update_link(req: &mut Request, res: &mut Response) {
     let id: i64 = req.param("id").unwrap();
-    let link = req.parse_json::<Link>().await.unwrap();
-    let query = "UPDATE links SET title = ?, slug = ?, url = ? WHERE id = ?";
+    let link = match req.parse_json::<Link>().await {
+        Ok(link) => link,
+        Err(err) => {
+            res.status_code(StatusCode::UNPROCESSABLE_ENTITY)
+                .render(Text::Json(json!({ "error": err.to_string() }).to_string()));
+            return;
+        }
+    };
+    let query = "UPDATE links SET slug = ?, url = ? WHERE id = ?";
     match sqlx::query(query)
-        .bind(&link.title)
         .bind(&link.slug)
         .bind(&link.url)
         .bind(id)
@@ -130,7 +143,6 @@ async fn create_schema(db_url: &str) -> Result<SqliteQueryResult, Error> {
         PRAGMA foreign_keys = ON;
         CREATE TABLE IF NOT EXISTS links (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
             slug TEXT NOT NULL UNIQUE,
             url TEXT NOT NULL,
             created_at DATETIME DEFAULT (datetime('now', 'localtime')),
@@ -169,7 +181,7 @@ async fn content_type(_req: &mut Request, res: &mut Response) {
 }
 
 #[handler]
-fn ok(_req: &mut Request, res: &mut Response) {
+fn ok_handler(_req: &mut Request, res: &mut Response) {
     res.status_code(StatusCode::OK);
 }
 
@@ -192,25 +204,24 @@ async fn main() {
     let pool = SqlitePool::connect(db_url).await.unwrap();
     SQLITE.set(pool).unwrap();
 
-    let router = Router::new()
+    let router_admin = Router::new()
         .hoop(cors)
         .hoop(content_type)
-        .push(Router::with_path("status").get(ok))
+        .push(Router::with_path("status").get(ok_handler))
         .push(
             Router::with_path("links")
                 .get(get_links)
                 .post(create_link)
-                .options(ok)
+                .options(ok_handler)
                 .push(
                     Router::with_path("<id>")
                         .get(get_link_by_id)
                         .put(update_link)
                         .delete(delete_link)
-                        .options(ok),
+                        .options(ok_handler),
                 ),
         )
         .push(Router::with_path("icon.svg").get(StaticFile::new("static/icon.svg")))
-        .push(Router::with_path("<slug>").get(redirect))
         .push(
             Router::with_path("<**path>").get(
                 StaticDir::new(["static"])
@@ -218,7 +229,15 @@ async fn main() {
                     .auto_list(true),
             ),
         );
+    let acceptor_admin = TcpListener::new("0.0.0.0:3000").bind().await;
 
-    let acceptor = TcpListener::new("0.0.0.0:3000").bind().await;
-    Server::new(acceptor).serve(router).await;
+    // Start a separate port for the forwarding service.
+    let router_forwarder = Router::new().push(Router::with_path("<slug>").get(redirect));
+    let acceptor_forwarder = TcpListener::new("0.0.0.0:3001").bind().await;
+
+    // Start the servers
+    join!(
+        Server::new(acceptor_admin).serve(router_admin),
+        Server::new(acceptor_forwarder).serve(router_forwarder)
+    );
 }
