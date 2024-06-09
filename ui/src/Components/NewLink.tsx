@@ -8,7 +8,6 @@ import {
 import { useForm, isNotEmpty } from "@mantine/form";
 import { IconArrowRight, IconLink, IconTag } from "@tabler/icons-react";
 import { useState } from "react";
-import { Link } from "./LinkList";
 
 const hostname =
   location.hostname === "localhost" ? "http://localhost:3000" : "";
