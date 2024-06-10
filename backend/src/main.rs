@@ -139,7 +139,13 @@ async fn redirect(req: &mut Request, res: &mut Response) {
         .fetch_one(get_sqlite())
         .await;
     match data {
-        Ok(link) => res.render(Redirect::found(link.url)),
+        Ok(link) => {
+            res.headers_mut().insert(
+                header::REFERRER_POLICY,
+                HeaderValue::from_static("no-referrer"),
+            );
+            res.render(Redirect::found(link.url))
+        }
         Err(_) => {
             res.status_code(StatusCode::NOT_FOUND);
             return;
