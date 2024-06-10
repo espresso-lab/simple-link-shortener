@@ -1,73 +1,82 @@
-use std::env;
-
-use once_cell::sync::{Lazy, OnceCell};
+use confique::Config;
+use dotenv::dotenv;
+use once_cell::sync::OnceCell;
 use salvo::{
     http::{header, HeaderValue},
     prelude::*,
 };
+
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use sqlx::{
-    migrate::MigrateDatabase, sqlite::SqliteQueryResult, Error as SqliteError, FromRow, Sqlite,
-    SqlitePool,
+    migrate::MigrateDatabase, sqlite::SqliteQueryResult, Error, FromRow, Sqlite, SqlitePool,
 };
+use std::sync::OnceLock;
 use tokio::join;
 
-static CORS_ALLOW_ORIGINS: Lazy<String> =
-    Lazy::new(|| env::var("CORS_ALLOW_ORIGINS").unwrap_or("*".to_string()));
 static SQLITE: OnceCell<SqlitePool> = OnceCell::new();
 
-// TODO: Implement
-static FORWARD_URL: Lazy<String> = Lazy::new(|| env::var("FORWARD_URL").unwrap_or("".to_string()));
+#[derive(Config)]
+struct Conf {
+    #[config(env = "CORS_ALLOW_ORIGINS", default = "*")]
+    cors_allow_origins: String,
 
-#[inline]
-fn get_sqlite() -> &'static SqlitePool {
+    #[config(env = "FORWARD_URL", default = "https://example.com/")]
+    forward_url: String,
+}
+
+fn config() -> &'static Conf {
+    static CONFIG: OnceLock<Conf> = OnceLock::new();
+    CONFIG.get_or_init(|| Conf::builder().env().load().unwrap())
+}
+
+fn sqlite() -> &'static SqlitePool {
     SQLITE.get().unwrap()
 }
 
 #[derive(FromRow, Serialize, Deserialize, Debug)]
 struct Link {
-    id: Option<i64>,
     slug: String,
-    slug_url: String, // Result: FORWARD_URL + slug
     url: String,
     created_at: Option<String>,
     updated_at: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Error {
-    title: String,
-    message: String,
-    status: u16,
+struct LinkDTO {
+    slug: String,
+    url: String,
+    url_slug: String,
+    created_at: String,
+    updated_at: String,
 }
 
 #[handler]
 async fn get_links(_req: &mut Request, res: &mut Response) {
     let data = sqlx::query_as::<_, Link>("SELECT * FROM links")
-        .fetch_all(get_sqlite())
+        .fetch_all(sqlite())
         .await;
     match data {
-        Ok(data) => res.render(Json(data)),
-        Err(_) => {
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            return;
+        Ok(data) => {
+            let links = data
+                .into_iter()
+                .map(|link| LinkDTO {
+                    url_slug: format!(
+                        "{}/{}",
+                        config().forward_url.trim_end_matches("/"),
+                        link.slug
+                    )
+                    .to_string(),
+                    created_at: link.created_at.unwrap_or_default(),
+                    updated_at: link.updated_at.unwrap_or_default(),
+                    slug: link.slug,
+                    url: link.url,
+                })
+                .collect::<Vec<LinkDTO>>();
+            res.render(Json(links));
         }
-    }
-}
-
-#[handler]
-async fn get_link_by_id(req: &mut Request, res: &mut Response) {
-    let id = req.params().get("id").cloned().unwrap_or_default();
-    let data = sqlx::query_as::<_, Link>("SELECT * FROM links WHERE id = ?")
-        .bind(&id)
-        .fetch_one(get_sqlite())
-        .await;
-    match data {
-        Ok(link) => res.render(Json(link)),
         Err(err) => res
-            .status_code(StatusCode::NOT_FOUND)
-            .render(Text::Json(json!({"error": err.to_string()}).to_string())),
+            .status_code(StatusCode::INTERNAL_SERVER_ERROR)
+            .render(Json(err.to_string())),
     }
 }
 
@@ -76,68 +85,49 @@ async fn create_link(req: &mut Request, res: &mut Response) {
     let link = match req.parse_json::<Link>().await {
         Ok(link) => link,
         Err(err) => {
-            res.status_code(StatusCode::UNPROCESSABLE_ENTITY)
-                .render(Text::Json(json!({ "error": err.to_string() }).to_string()));
-            return;
+            return res
+                .status_code(StatusCode::UNPROCESSABLE_ENTITY)
+                .render(Json(err.to_string()));
         }
     };
     let query = "INSERT INTO links (slug, url) VALUES (?, ?)";
     match sqlx::query(query)
         .bind(&link.slug)
         .bind(&link.url)
-        .execute(get_sqlite())
+        .execute(sqlite())
         .await
     {
         Ok(_) => res.status_code(StatusCode::CREATED),
         Err(err) => {
-            res.status_code(StatusCode::UNPROCESSABLE_ENTITY)
-                .render(Text::Json(json!({ "error": err.to_string() }).to_string()));
-            return;
+            return res
+                .status_code(StatusCode::UNPROCESSABLE_ENTITY)
+                .render(Json(err.to_string()))
         }
-    };
-}
-
-#[handler]
-async fn update_link(req: &mut Request, res: &mut Response) {
-    let id: i64 = req.param("id").unwrap();
-    let link = match req.parse_json::<Link>().await {
-        Ok(link) => link,
-        Err(err) => {
-            res.status_code(StatusCode::UNPROCESSABLE_ENTITY)
-                .render(Text::Json(json!({ "error": err.to_string() }).to_string()));
-            return;
-        }
-    };
-    let query = "UPDATE links SET slug = ?, url = ? WHERE id = ?";
-    match sqlx::query(query)
-        .bind(&link.slug)
-        .bind(&link.url)
-        .bind(id)
-        .execute(get_sqlite())
-        .await
-    {
-        Ok(_) => res.status_code(StatusCode::NO_CONTENT),
-        Err(_) => res.status_code(StatusCode::INTERNAL_SERVER_ERROR),
     };
 }
 
 #[handler]
 async fn delete_link(req: &mut Request, res: &mut Response) {
-    let id = req.params().get("id").cloned().unwrap_or_default();
-    let query = "DELETE FROM links WHERE id = ?";
-    match sqlx::query(query).bind(id).execute(get_sqlite()).await {
+    let slug = req.params().get("slug").cloned().unwrap_or_default();
+    let query = "DELETE FROM links WHERE slug = ?";
+    match sqlx::query(query).bind(slug).execute(sqlite()).await {
         Ok(_) => res.status_code(StatusCode::NO_CONTENT),
-        Err(_) => res.status_code(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(err) => {
+            return res
+                .status_code(StatusCode::UNPROCESSABLE_ENTITY)
+                .render(Json(err.to_string()));
+        }
     };
 }
 
 #[handler]
-async fn redirect(req: &mut Request, res: &mut Response) {
+async fn redirect_handler(req: &mut Request, res: &mut Response) {
     let slug = req.params().get("slug").cloned().unwrap_or_default();
     let data = sqlx::query_as::<_, Link>("SELECT * FROM links WHERE slug = ?")
         .bind(slug)
-        .fetch_one(get_sqlite())
+        .fetch_one(sqlite())
         .await;
+
     match data {
         Ok(link) => {
             res.headers_mut().insert(
@@ -147,19 +137,18 @@ async fn redirect(req: &mut Request, res: &mut Response) {
             res.render(Redirect::found(link.url))
         }
         Err(_) => {
-            res.status_code(StatusCode::NOT_FOUND);
-            return;
+            res.status_code(StatusCode::NOT_FOUND)
+                .render(Text::Plain("Not found."));
         }
     }
 }
 
-async fn create_schema(db_url: &str) -> Result<SqliteQueryResult, SqliteError> {
+async fn create_schema(db_url: &str) -> Result<SqliteQueryResult, Error> {
     let pool = SqlitePool::connect(db_url).await?;
     let query = "
         PRAGMA foreign_keys = ON;
         CREATE TABLE IF NOT EXISTS links (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            slug TEXT NOT NULL UNIQUE,
+            slug TEXT PRIMARY KEY NOT NULL,
             url TEXT NOT NULL,
             created_at DATETIME DEFAULT (datetime('now', 'localtime')),
             updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
@@ -174,7 +163,7 @@ async fn create_schema(db_url: &str) -> Result<SqliteQueryResult, SqliteError> {
 async fn cors(_req: &mut Request, res: &mut Response) {
     res.headers_mut().insert(
         header::ACCESS_CONTROL_ALLOW_ORIGIN,
-        HeaderValue::from_static(CORS_ALLOW_ORIGINS.as_str()),
+        HeaderValue::from_static(config().cors_allow_origins.as_str()),
     );
 
     res.headers_mut().insert(
@@ -203,6 +192,7 @@ fn ok_handler(_req: &mut Request, res: &mut Response) {
 
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
     tracing_subscriber::fmt().init();
 
     let db_url = "sqlite://db/links.db";
@@ -230,9 +220,7 @@ async fn main() {
                 .post(create_link)
                 .options(ok_handler)
                 .push(
-                    Router::with_path("<id>")
-                        .get(get_link_by_id)
-                        .put(update_link)
+                    Router::with_path("<slug>")
                         .delete(delete_link)
                         .options(ok_handler),
                 ),
@@ -248,12 +236,12 @@ async fn main() {
     let acceptor_admin = TcpListener::new("0.0.0.0:3000").bind().await;
 
     // Start a separate port for the forwarding service.
-    let router_forwarder = Router::new().push(Router::with_path("<slug>").get(redirect));
+    let router_forwarder = Router::new().push(Router::with_path("<slug>").goal(redirect_handler));
     let acceptor_forwarder = TcpListener::new("0.0.0.0:3001").bind().await;
 
     // Start the servers
     join!(
-        Server::new(acceptor_admin).serve(router_admin),
-        Server::new(acceptor_forwarder).serve(router_forwarder)
+        Server::new(acceptor_admin).serve(Service::new(router_admin).hoop(Logger::new())),
+        Server::new(acceptor_forwarder).serve(Service::new(router_forwarder).hoop(Logger::new()))
     );
 }

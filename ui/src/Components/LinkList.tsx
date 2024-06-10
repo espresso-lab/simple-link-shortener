@@ -15,19 +15,16 @@ import localizedFormat from "dayjs/plugin/localizedFormat";
 import { forwardRef, useEffect, useState } from "react";
 import { NewLink } from "./NewLink";
 import { notifications } from "@mantine/notifications";
-import { fetchLinks } from "../Requests/api";
+import { deleteLink, fetchLinks } from "../Requests/api";
 dayjs.extend(localizedFormat);
 
 export interface Link {
-  id: string;
   slug: string;
+  url_slug: string;
   url: string;
   created_at: string;
   updated_at: string;
 }
-
-const hostname =
-  location.hostname === "localhost" ? "http://localhost:3000" : "";
 
 export const LinkList = forwardRef(function LinkList() {
   const [links, setLinks] = useState<Link[]>([]);
@@ -43,7 +40,7 @@ export const LinkList = forwardRef(function LinkList() {
   }, []);
 
   const rows = links.map((link) => (
-    <Table.Tr key={link.id}>
+    <Table.Tr key={link.slug}>
       <Table.Td>
         <Text size="sm">
           {dayjs(link.created_at).format("DD/MM/YYYY HH:mm")}
@@ -89,15 +86,9 @@ export const LinkList = forwardRef(function LinkList() {
         >
           <Box display="flex" style={{ alignItems: "center" }}>
             <Box display="flex" style={{ alignItems: "center" }}>
-              <Text size="sm" c="dimmed" visibleFrom="md">
-                {document.location.toString()}
-              </Text>
-              {link.slug}
+              {link.url_slug}
             </Box>
-            <CopyButton
-              value={`${document.location}${link.slug}`}
-              timeout={2000}
-            >
+            <CopyButton value={link.url_slug} timeout={2000}>
               {({ copied, copy }) => (
                 <Tooltip
                   label={copied ? "Copied" : "Copy"}
@@ -126,14 +117,12 @@ export const LinkList = forwardRef(function LinkList() {
               size="md"
               aria-label="Delete"
               onClick={() => {
-                fetch(`${hostname}/links/${link.id}`, {
-                  method: "DELETE",
-                })
+                deleteLink(link.slug)
                   .then(() => {
                     refreshLinks();
                     notifications.show({
                       withBorder: true,
-                      color: "red",
+                      color: "green",
                       title: "Link deleted successfully",
                       message: `Link with slug ${link.slug} has been deleted.`,
                     });
@@ -158,9 +147,7 @@ export const LinkList = forwardRef(function LinkList() {
 
   return (
     <>
-      <NewLink
-        onLinkCreated={() => fetchLinks().then((links) => setLinks(links))}
-      />
+      <NewLink onLinkCreated={() => refreshLinks()} />
       {links.length !== 0 && (
         <Table striped highlightOnHover withTableBorder withColumnBorders>
           <Table.Thead>
