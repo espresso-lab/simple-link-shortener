@@ -34,8 +34,7 @@ export function NewLink({ onLinkCreated, ...props }: NewLinkProps) {
       onSubmit={form.onSubmit(({ url, slug }) => {
         if (url && slug) {
           createLink({ url, slug })
-            .then((asd) => {
-              console.log(asd);
+            .then((link) => {
               setNext(false);
               form.reset();
               onLinkCreated?.();

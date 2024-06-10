@@ -14,17 +14,25 @@ export async function createLink(props: CreateLinkRequest) {
     body: JSON.stringify(props),
   });
   if (!res.ok) {
-    const { error } = await res.json();
-    throw new Error(error);
+    throw new Error(await res.json());
   }
-  return res;
+  return;
 }
 
 export async function fetchLinks() {
   const res = await fetch(`${hostname}/links`);
   if (!res.ok) {
-    const { error } = await res.json();
-    throw new Error(error);
+    throw new Error(await res.json());
   }
   return res.json();
+}
+
+export async function deleteLink(slug: string) {
+  const res = await fetch(`${hostname}/links/${slug}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw new Error(await res.json());
+  }
+  return;
 }
