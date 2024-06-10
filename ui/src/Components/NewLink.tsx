@@ -6,11 +6,10 @@ import {
   rem,
 } from "@mantine/core";
 import { useForm, isNotEmpty } from "@mantine/form";
+import { notifications } from "@mantine/notifications";
 import { IconArrowRight, IconLink, IconTag } from "@tabler/icons-react";
 import { useState } from "react";
-
-const hostname =
-  location.hostname === "localhost" ? "http://localhost:3000" : "";
+import { createLink } from "../Requests/api";
 
 interface NewLinkProps extends TextInputProps {
   onLinkCreated?: () => void;
@@ -34,19 +33,27 @@ export function NewLink({ onLinkCreated, ...props }: NewLinkProps) {
     <form
       onSubmit={form.onSubmit(({ url, slug }) => {
         if (url && slug) {
-          fetch(`${hostname}/links`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ url, slug }),
-          })
-            .then(() => {
+          createLink({ url, slug })
+            .then((asd) => {
+              console.log(asd);
               setNext(false);
               form.reset();
               onLinkCreated?.();
+              notifications.show({
+                withBorder: true,
+                color: "green",
+                title: "Link created successfully",
+                message: "You can now share the slug with the world.",
+              });
             })
-            .catch((err) => console.log(err));
+            .catch((err) => {
+              notifications.show({
+                withBorder: true,
+                color: "red",
+                title: "Failed to create link",
+                message: err.message,
+              });
+            });
         } else if (url) {
           setNext(true);
         }

@@ -14,6 +14,8 @@ import dayjs from "dayjs";
 import localizedFormat from "dayjs/plugin/localizedFormat";
 import { forwardRef, useEffect, useState } from "react";
 import { NewLink } from "./NewLink";
+import { notifications } from "@mantine/notifications";
+import { fetchLinks } from "../Requests/api";
 dayjs.extend(localizedFormat);
 
 export interface Link {
@@ -26,11 +28,6 @@ export interface Link {
 
 const hostname =
   location.hostname === "localhost" ? "http://localhost:3000" : "";
-
-async function fetchLinks(): Promise<Link[]> {
-  const response = await fetch(`${hostname}/links`);
-  return response.json();
-}
 
 export const LinkList = forwardRef(function LinkList() {
   const [links, setLinks] = useState<Link[]>([]);
@@ -133,10 +130,22 @@ export const LinkList = forwardRef(function LinkList() {
                   method: "DELETE",
                 })
                   .then(() => {
-                    console.log("deleted");
                     refreshLinks();
+                    notifications.show({
+                      withBorder: true,
+                      color: "red",
+                      title: "Link deleted successfully",
+                      message: `Link with slug ${link.slug} has been deleted.`,
+                    });
                   })
-                  .catch((error) => console.error(error));
+                  .catch((error) => {
+                    notifications.show({
+                      withBorder: true,
+                      color: "red",
+                      title: "Failed to delete link",
+                      message: error.message,
+                    });
+                  });
               }}
             >
               <IconTrash style={{ width: rem(20) }} stroke={1.5} />
