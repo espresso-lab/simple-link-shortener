@@ -82,7 +82,7 @@ async fn get_links(_req: &mut Request, res: &mut Response) {
 
 #[handler]
 async fn create_link(req: &mut Request, res: &mut Response) {
-    let link = match req.parse_json::<LinkDTO>().await {
+    let link = match req.parse_json::<Link>().await {
         Ok(link) => link,
         Err(err) => {
             return res
