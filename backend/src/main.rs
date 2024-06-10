@@ -16,6 +16,9 @@ static CORS_ALLOW_ORIGINS: Lazy<String> =
     Lazy::new(|| env::var("CORS_ALLOW_ORIGINS").unwrap_or("*".to_string()));
 static SQLITE: OnceCell<SqlitePool> = OnceCell::new();
 
+// TODO: Implement
+static FORWARD_URL: Lazy<String> = Lazy::new(|| env::var("FORWARD_URL").unwrap_or("".to_string()));
+
 #[inline]
 fn get_sqlite() -> &'static SqlitePool {
     SQLITE.get().unwrap()
@@ -25,6 +28,7 @@ fn get_sqlite() -> &'static SqlitePool {
 struct Link {
     id: Option<i64>,
     slug: String,
+    slug_url: String, // Result: FORWARD_URL + slug
     url: String,
     created_at: Option<String>,
     updated_at: Option<String>,
