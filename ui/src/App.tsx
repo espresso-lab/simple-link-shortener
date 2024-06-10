@@ -1,6 +1,8 @@
 import "@mantine/core/styles.css";
+import "@mantine/notifications/styles.css";
 import { Container, MantineProvider } from "@mantine/core";
 import { LinkList } from "./Components/LinkList";
+import { Notifications } from "@mantine/notifications";
 
 export default function App() {
   return (
@@ -9,6 +11,7 @@ export default function App() {
         primaryColor: "violet",
       }}
     >
+      <Notifications />
       <Container
         style={{
           minHeight: "100vh",

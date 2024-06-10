@@ -8,7 +8,8 @@ use salvo::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{
-    migrate::MigrateDatabase, sqlite::SqliteQueryResult, Error, FromRow, Sqlite, SqlitePool,
+    migrate::MigrateDatabase, sqlite::SqliteQueryResult, Error as SqliteError, FromRow, Sqlite,
+    SqlitePool,
 };
 use tokio::join;
 
@@ -34,6 +35,13 @@ struct Link {
     updated_at: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct Error {
+    title: String,
+    message: String,
+    status: u16,
+}
+
 #[handler]
 async fn get_links(_req: &mut Request, res: &mut Response) {
     let data = sqlx::query_as::<_, Link>("SELECT * FROM links")
@@ -52,15 +60,14 @@ async fn get_links(_req: &mut Request, res: &mut Response) {
 async fn get_link_by_id(req: &mut Request, res: &mut Response) {
     let id = req.params().get("id").cloned().unwrap_or_default();
     let data = sqlx::query_as::<_, Link>("SELECT * FROM links WHERE id = ?")
-        .bind(id)
+        .bind(&id)
         .fetch_one(get_sqlite())
         .await;
     match data {
         Ok(link) => res.render(Json(link)),
-        Err(_) => {
-            res.status_code(StatusCode::NOT_FOUND);
-            return;
-        }
+        Err(err) => res
+            .status_code(StatusCode::NOT_FOUND)
+            .render(Text::Json(json!({"error": err.to_string()}).to_string())),
     }
 }
 
@@ -140,7 +147,7 @@ async fn redirect(req: &mut Request, res: &mut Response) {
     }
 }
 
-async fn create_schema(db_url: &str) -> Result<SqliteQueryResult, Error> {
+async fn create_schema(db_url: &str) -> Result<SqliteQueryResult, SqliteError> {
     let pool = SqlitePool::connect(db_url).await?;
     let query = "
         PRAGMA foreign_keys = ON;
