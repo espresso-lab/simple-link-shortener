@@ -88,8 +88,7 @@ async fn create_link(req: &mut Request, res: &mut Response) {
                 .render(Json(err.to_string()));
         }
     };
-    let query = "INSERT INTO links (slug, url) VALUES (?, ?)";
-    match sqlx::query(query)
+    match sqlx::query("INSERT INTO links (slug, url) VALUES (?, ?)")
         .bind(&link.slug)
         .bind(&link.url)
         .execute(sqlite())
@@ -106,9 +105,11 @@ async fn create_link(req: &mut Request, res: &mut Response) {
 
 #[handler]
 async fn delete_link(req: &mut Request, res: &mut Response) {
-    let slug = req.params().get("slug").cloned().unwrap_or_default();
-    let query = "DELETE FROM links WHERE slug = ?";
-    match sqlx::query(query).bind(slug).execute(sqlite()).await {
+    match sqlx::query("DELETE FROM links WHERE slug = ?")
+        .bind(req.params().get("slug").unwrap_or(&"".to_string()))
+        .execute(sqlite())
+        .await
+    {
         Ok(_) => res.status_code(StatusCode::NO_CONTENT),
         Err(err) => {
             return res
