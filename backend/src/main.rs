@@ -7,9 +7,7 @@ use salvo::{
 };
 
 use serde::{Deserialize, Serialize};
-use sqlx::{
-    migrate::MigrateDatabase, sqlite::SqliteQueryResult, Error, FromRow, Sqlite, SqlitePool,
-};
+use sqlx::{migrate::MigrateDatabase, FromRow, Sqlite, SqlitePool};
 use std::sync::OnceLock;
 use tokio::join;
 
@@ -143,22 +141,6 @@ async fn redirect_handler(req: &mut Request, res: &mut Response) {
     }
 }
 
-async fn create_schema(db_url: &str) -> Result<SqliteQueryResult, Error> {
-    let pool = SqlitePool::connect(db_url).await?;
-    let query = "
-        PRAGMA foreign_keys = ON;
-        CREATE TABLE IF NOT EXISTS links (
-            slug TEXT PRIMARY KEY NOT NULL,
-            url TEXT NOT NULL,
-            created_at DATETIME DEFAULT (datetime('now', 'localtime')),
-            updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
-        );
-    ";
-    let result = sqlx::query(query).execute(&pool).await;
-    pool.close().await;
-    result
-}
-
 #[handler]
 async fn cors(_req: &mut Request, res: &mut Response) {
     res.headers_mut().insert(
@@ -187,7 +169,7 @@ async fn content_type(_req: &mut Request, res: &mut Response) {
 
 #[handler]
 fn ok_handler(_req: &mut Request, res: &mut Response) {
-    res.status_code(StatusCode::OK);
+    res.status_code(StatusCode::NO_CONTENT);
 }
 
 #[tokio::main]
@@ -198,16 +180,18 @@ async fn main() {
     let db_url = "sqlite://db/links.db";
     if !Sqlite::database_exists(db_url).await.unwrap_or(false) {
         Sqlite::create_database(db_url).await.unwrap();
-        match create_schema(db_url).await {
-            Ok(_) => println!("DB created successfully"),
-            Err(e) => {
-                eprintln!("Failed to create schema: {:?}", e);
-                return;
-            }
-        }
     }
 
     let pool = SqlitePool::connect(db_url).await.unwrap();
+
+    match sqlx::migrate!().run(&pool).await {
+        Ok(_) => println!("Sucessfully run migrations."),
+        Err(e) => {
+            eprintln!("Failed to run DB migrations: {:?}", e);
+            return;
+        }
+    }
+
     SQLITE.set(pool).unwrap();
 
     let router_admin = Router::new()
