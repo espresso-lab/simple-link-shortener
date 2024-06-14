@@ -39,6 +39,14 @@ struct Link {
     updated_at: Option<String>,
 }
 
+#[derive(FromRow, Serialize, Deserialize, Debug)]
+struct LinkClickTracking {
+    slug: String,
+    datetime: Option<String>,
+    client_ip_address: String,
+    client_browser: String,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 struct LinkDTO {
     slug: String,
@@ -119,13 +127,45 @@ async fn delete_link(req: &mut Request, res: &mut Response) {
     };
 }
 
+fn get_user_ip(req: &mut Request) -> String {
+    if !get_header(req, "X-Real-Ip").is_empty() {
+        return get_header(req, "X-Real-Ip");
+    }
+
+    if !get_header(req, "X-Forwarded-For").is_empty() {
+        return get_header(req, "X-Forwarded-For");
+    }
+
+    if !get_header(req, "RemoteAddr").is_empty() {
+        return get_header(req, "RemoteAddr");
+    }
+
+    return "".to_string();
+}
+
+fn get_header(req: &Request, key: &str) -> String {
+    req.headers()
+        .get(key)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_string()
+}
+
 #[handler]
 async fn redirect_handler(req: &mut Request, res: &mut Response) {
     let slug = req.params().get("slug").cloned().unwrap_or_default();
     let data = sqlx::query_as::<_, Link>("SELECT * FROM links WHERE slug = ?")
-        .bind(slug)
+        .bind(&slug)
         .fetch_one(sqlite())
         .await;
+
+    sqlx::query("INSERT INTO link_click_tracking (slug, client_ip_address, client_browser) VALUES (?, ?, ?)")
+        .bind(&slug)
+        .bind(get_user_ip(req))
+        .bind(get_header(req, "User-Agent"))
+        .execute(sqlite())
+        .await
+        .unwrap_or_default();
 
     match data {
         Ok(link) => {
