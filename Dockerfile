@@ -1,4 +1,4 @@
-FROM node:21 AS frontend
+FROM node:22-alpine AS frontend
 WORKDIR /app
 COPY ui .
 RUN npm i && npm run build
@@ -50,4 +50,5 @@ COPY --from=builder /build /app
 COPY --from=frontend /app/dist /static
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 EXPOSE 3000
+EXPOSE 3001
 CMD ["/app"]

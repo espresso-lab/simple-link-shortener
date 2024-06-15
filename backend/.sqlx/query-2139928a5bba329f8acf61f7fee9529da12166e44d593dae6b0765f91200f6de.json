@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT * FROM link_click_tracking WHERE slug = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "slug",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "datetime",
+        "ordinal": 1,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "client_ip_address",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "client_browser",
+        "ordinal": 3,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2139928a5bba329f8acf61f7fee9529da12166e44d593dae6b0765f91200f6de"
+}

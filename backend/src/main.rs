@@ -5,9 +5,8 @@ use salvo::{
     http::{header, HeaderValue},
     prelude::*,
 };
-
 use serde::{Deserialize, Serialize};
-use sqlx::{migrate::MigrateDatabase, FromRow, Sqlite, SqlitePool};
+use sqlx::{migrate::MigrateDatabase, types::chrono::NaiveDateTime, FromRow, Sqlite, SqlitePool};
 use std::sync::OnceLock;
 use tokio::join;
 
@@ -31,18 +30,28 @@ fn sqlite() -> &'static SqlitePool {
     SQLITE.get().unwrap()
 }
 
-#[derive(FromRow, Serialize, Deserialize, Debug)]
+// Serialize, Deserialize
+#[derive(FromRow, Debug)]
 struct Link {
     slug: String,
     url: String,
-    created_at: Option<String>,
-    updated_at: Option<String>,
+    created_at: Option<NaiveDateTime>,
+    updated_at: Option<NaiveDateTime>,
 }
 
-#[derive(FromRow, Serialize, Deserialize, Debug)]
+// Serialize, Deserialize
+#[derive(FromRow, Debug)]
 struct LinkClickTracking {
     slug: String,
-    datetime: Option<String>,
+    datetime: Option<NaiveDateTime>,
+    client_ip_address: String,
+    client_browser: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct LinkClickTrackingDTO {
+    slug: String,
+    datetime: String,
     client_ip_address: String,
     client_browser: String,
 }
@@ -54,28 +63,41 @@ struct LinkDTO {
     url_slug: String,
     created_at: String,
     updated_at: String,
+    tracking_clicks: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct CreateLinkDTO {
+    slug: String,
+    url: String,
 }
 
 #[handler]
 async fn get_links(_req: &mut Request, res: &mut Response) {
-    let data = sqlx::query_as::<_, Link>("SELECT * FROM links")
-        .fetch_all(sqlite())
-        .await;
+    let data = sqlx::query!(
+        "SELECT t1.*, COUNT(t2.datetime) as tracking_clicks FROM links t1
+        LEFT JOIN link_click_tracking t2 ON t1.slug = t2.slug
+        GROUP BY t1.slug"
+    )
+    .fetch_all(sqlite())
+    .await;
+
     match data {
         Ok(data) => {
             let links = data
                 .into_iter()
-                .map(|link| LinkDTO {
+                .map(|record| LinkDTO {
                     url_slug: format!(
                         "{}/{}",
                         config().forward_url.trim_end_matches("/"),
-                        link.slug
+                        record.slug
                     )
                     .to_string(),
-                    created_at: link.created_at.unwrap_or_default(),
-                    updated_at: link.updated_at.unwrap_or_default(),
-                    slug: link.slug,
-                    url: link.url,
+                    created_at: record.created_at.unwrap_or_default().to_string(),
+                    updated_at: record.updated_at.unwrap_or_default().to_string(),
+                    slug: record.slug,
+                    url: record.url,
+                    tracking_clicks: record.tracking_clicks,
                 })
                 .collect::<Vec<LinkDTO>>();
             res.render(Json(links));
@@ -87,8 +109,43 @@ async fn get_links(_req: &mut Request, res: &mut Response) {
 }
 
 #[handler]
+async fn get_link_clicks(req: &mut Request, res: &mut Response) {
+    let slug = req
+        .params()
+        .get("slug")
+        .unwrap_or(&"".to_string())
+        .to_string();
+
+    let data = sqlx::query_as!(
+        LinkClickTracking,
+        "SELECT * FROM link_click_tracking WHERE slug = ?",
+        slug
+    )
+    .fetch_all(sqlite())
+    .await;
+
+    match data {
+        Ok(data) => {
+            res.render(Json(
+                data.into_iter()
+                    .map(|record| LinkClickTrackingDTO {
+                        slug: record.slug,
+                        client_browser: record.client_browser,
+                        client_ip_address: record.client_ip_address,
+                        datetime: record.datetime.unwrap().to_string(),
+                    })
+                    .collect::<Vec<LinkClickTrackingDTO>>(),
+            ));
+        }
+        Err(err) => res
+            .status_code(StatusCode::INTERNAL_SERVER_ERROR)
+            .render(Json(err.to_string())),
+    }
+}
+
+#[handler]
 async fn create_link(req: &mut Request, res: &mut Response) {
-    let link = match req.parse_json::<Link>().await {
+    let link = match req.parse_json::<CreateLinkDTO>().await {
         Ok(link) => link,
         Err(err) => {
             return res
@@ -96,11 +153,13 @@ async fn create_link(req: &mut Request, res: &mut Response) {
                 .render(Json(err.to_string()));
         }
     };
-    match sqlx::query("INSERT INTO links (slug, url) VALUES (?, ?)")
-        .bind(&link.slug)
-        .bind(&link.url)
-        .execute(sqlite())
-        .await
+    match sqlx::query!(
+        "INSERT INTO links (slug, url) VALUES (?, ?)",
+        link.slug,
+        link.url
+    )
+    .execute(sqlite())
+    .await
     {
         Ok(_) => res.status_code(StatusCode::CREATED),
         Err(err) => {
@@ -113,8 +172,13 @@ async fn create_link(req: &mut Request, res: &mut Response) {
 
 #[handler]
 async fn delete_link(req: &mut Request, res: &mut Response) {
-    match sqlx::query("DELETE FROM links WHERE slug = ?")
-        .bind(req.params().get("slug").unwrap_or(&"".to_string()))
+    let slug = req
+        .params()
+        .get("slug")
+        .unwrap_or(&"".to_string())
+        .to_string();
+
+    match sqlx::query!("DELETE FROM links WHERE slug = ?", slug)
         .execute(sqlite())
         .await
     {
@@ -154,8 +218,7 @@ fn get_header(req: &Request, key: &str) -> String {
 #[handler]
 async fn redirect_handler(req: &mut Request, res: &mut Response) {
     let slug = req.params().get("slug").cloned().unwrap_or_default();
-    let data = sqlx::query_as::<_, Link>("SELECT * FROM links WHERE slug = ?")
-        .bind(&slug)
+    let data = sqlx::query_as!(Link, "SELECT * FROM links WHERE slug = ?", slug)
         .fetch_one(sqlite())
         .await;
 
@@ -246,6 +309,7 @@ async fn main() {
                 .options(ok_handler)
                 .push(
                     Router::with_path("<slug>")
+                        .push(Router::with_path("/clicks").get(get_link_clicks))
                         .delete(delete_link)
                         .options(ok_handler),
                 ),

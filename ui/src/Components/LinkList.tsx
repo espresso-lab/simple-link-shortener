@@ -7,15 +7,22 @@ import {
   rem,
   Box,
   useMantineTheme,
+  Modal,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { IconCheck, IconCopy, IconTrash } from "@tabler/icons-react";
+import {
+  IconCheck,
+  IconCopy,
+  IconTrash,
+  IconZoomIn,
+} from "@tabler/icons-react";
 import dayjs from "dayjs";
 import localizedFormat from "dayjs/plugin/localizedFormat";
 import { forwardRef, useEffect, useState } from "react";
 import { NewLink } from "./NewLink";
 import { notifications } from "@mantine/notifications";
 import { deleteLink, fetchLinks } from "../Requests/api";
+import ClickList from "./ClickList";
 dayjs.extend(localizedFormat);
 
 export interface Link {
@@ -24,6 +31,7 @@ export interface Link {
   url: string;
   created_at: string;
   updated_at: string;
+  tracking_clicks: number;
 }
 
 export const LinkList = forwardRef(function LinkList() {
@@ -41,7 +49,7 @@ export const LinkList = forwardRef(function LinkList() {
 
   const rows = links.map((link) => (
     <Table.Tr key={link.slug}>
-      <Table.Td>
+      <Table.Td visibleFrom="md">
         <Text size="sm">
           {dayjs(link.created_at).format("DD/MM/YYYY HH:mm")}
         </Text>
@@ -75,6 +83,20 @@ export const LinkList = forwardRef(function LinkList() {
             )}
           </CopyButton>
         </Box>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm">
+          <Box display="flex" style={{ alignItems: "center", gap: 3 }}>
+            {link.tracking_clicks}
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              onClick={() => setSlugDetails(link.slug)}
+            >
+              <IconZoomIn style={{ width: rem(16) }} />
+            </ActionIcon>
+          </Box>
+        </Text>
       </Table.Td>
       <Table.Td>
         <Box
@@ -145,15 +167,26 @@ export const LinkList = forwardRef(function LinkList() {
     </Table.Tr>
   ));
 
+  const [slugDetails, setSlugDetails] = useState<String | null>();
+
   return (
     <>
+      <Modal
+        opened={!!slugDetails}
+        onClose={() => setSlugDetails(null)}
+        title={"Click Details: " + slugDetails}
+      >
+        <ClickList slug={slugDetails} />
+      </Modal>
+
       <NewLink onLinkCreated={() => refreshLinks()} />
       {links.length !== 0 && (
         <Table striped highlightOnHover withTableBorder withColumnBorders>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Created</Table.Th>
+              <Table.Th visibleFrom="md">Created</Table.Th>
               <Table.Th visibleFrom="md">Link</Table.Th>
+              <Table.Th>Clicks</Table.Th>
               <Table.Th>
                 <Box
                   display="flex"

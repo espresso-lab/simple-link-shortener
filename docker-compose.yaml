@@ -11,5 +11,7 @@ services:
           action: rebuild
     environment:
       CORS_ALLOW_ORIGINS: "*"
+      FORWARD_URL: "http://127.0.0.1:3001/"
     ports:
       - 3000:3000
+      - 3001:3001

@@ -27,6 +27,14 @@ export async function fetchLinks() {
   return res.json();
 }
 
+export async function fetchClicksForSlug(slug: string) {
+  const res = await fetch(`${hostname}/links/${slug}/clicks`);
+  if (!res.ok) {
+    throw new Error(await res.json());
+  }
+  return res.json();
+}
+
 export async function deleteLink(slug: string) {
   const res = await fetch(`${hostname}/links/${slug}`, {
     method: "DELETE",
