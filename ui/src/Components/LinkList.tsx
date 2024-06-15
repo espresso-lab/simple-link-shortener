@@ -167,17 +167,19 @@ export const LinkList = forwardRef(function LinkList() {
     </Table.Tr>
   ));
 
-  const [slugDetails, setSlugDetails] = useState<String | null>();
+  const [slugDetails, setSlugDetails] = useState<string | undefined>();
 
   return (
     <>
-      <Modal
-        opened={!!slugDetails}
-        onClose={() => setSlugDetails(null)}
-        title={"Click Details: " + slugDetails}
-      >
-        <ClickList slug={slugDetails} />
-      </Modal>
+      {slugDetails && (
+        <Modal
+          opened={!!slugDetails}
+          onClose={() => setSlugDetails(undefined)}
+          title={"Click Details: " + slugDetails}
+        >
+          <ClickList slug={slugDetails} />
+        </Modal>
+      )}
 
       <NewLink onLinkCreated={() => refreshLinks()} />
       {links.length !== 0 && (
