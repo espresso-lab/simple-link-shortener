@@ -23,7 +23,7 @@ export default function ClickList({ slug }: Props) {
   const tableData: TableData = {
     head: ["Date & Time", "Browser", "IP"],
     body: clicks.map((click) => [
-      click.datetime,
+      click.datetime.toString(),
       click.client_browser,
       click.client_ip_address,
     ]),
