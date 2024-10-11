@@ -27,11 +27,11 @@ dayjs.extend(localizedFormat);
 
 export interface Link {
   slug: string;
-  url_slug: string;
+  urlSlug: string;
   url: string;
-  created_at: string;
-  updated_at: string;
-  tracking_clicks: number;
+  createdAt: string;
+  updatedAt: string;
+  clicks: number;
 }
 
 export const LinkList = forwardRef(function LinkList() {
@@ -51,7 +51,7 @@ export const LinkList = forwardRef(function LinkList() {
     <Table.Tr key={link.slug}>
       <Table.Td visibleFrom="md">
         <Text size="sm">
-          {dayjs(link.created_at).format("DD/MM/YYYY HH:mm")}
+          {dayjs(link.createdAt).format("DD/MM/YYYY HH:mm")}
         </Text>
       </Table.Td>
       <Table.Td visibleFrom="md">
@@ -85,9 +85,8 @@ export const LinkList = forwardRef(function LinkList() {
         </Box>
       </Table.Td>
       <Table.Td>
-        <Text size="sm">
           <Box display="flex" style={{ alignItems: "center", gap: 3 }}>
-            {link.tracking_clicks}
+            <Text size="sm">{link.clicks}</Text>
             <ActionIcon
               variant="subtle"
               color="gray"
@@ -96,7 +95,6 @@ export const LinkList = forwardRef(function LinkList() {
               <IconZoomIn style={{ width: rem(16) }} />
             </ActionIcon>
           </Box>
-        </Text>
       </Table.Td>
       <Table.Td>
         <Box
@@ -108,9 +106,9 @@ export const LinkList = forwardRef(function LinkList() {
         >
           <Box display="flex" style={{ alignItems: "center" }}>
             <Box display="flex" style={{ alignItems: "center" }}>
-              {link.url_slug}
+              {link.urlSlug}
             </Box>
-            <CopyButton value={link.url_slug} timeout={2000}>
+            <CopyButton value={link.urlSlug} timeout={2000}>
               {({ copied, copy }) => (
                 <Tooltip
                   label={copied ? "Copied" : "Copy"}
@@ -175,7 +173,7 @@ export const LinkList = forwardRef(function LinkList() {
         <Modal
           opened={!!slugDetails}
           onClose={() => setSlugDetails(undefined)}
-          title={"Click Details: " + slugDetails}
+          title={`Clicks for ${slugDetails}`}
         >
           <ClickList slug={slugDetails} />
         </Modal>

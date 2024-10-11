@@ -1,17 +1,24 @@
-version: "3"
-
 services:
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./ui:/app
+      - /app/node_modules/
+    ports:
+      - 5173:5173
+
   simple-link-shortener:
-    build: .
-    develop:
-      watch:
-        - path: ./backend/src
-          action: rebuild
-        - path: ./ui
-          action: rebuild
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend:/app
+      - /app/target/
     environment:
-      CORS_ALLOW_ORIGINS: "*"
-      FORWARD_URL: "http://127.0.0.1:3001/"
+      CORS_ALLOWED_ORIGINS: "http://localhost:5173"
+      FORWARD_URL: "http://localhost:3001/"
     ports:
       - 3000:3000
       - 3001:3001

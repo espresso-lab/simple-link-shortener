@@ -1,12 +1,13 @@
 import { Table, TableData } from "@mantine/core";
 import { fetchClicksForSlug } from "../Requests/api";
 import { useEffect, useState } from "react";
+import dayjs from "dayjs";
 
 type Clicks = {
   slug: string;
   datetime: Date;
-  client_ip_address: string;
-  client_browser: string;
+  clientIpAddress: string;
+  clientBrowser: string;
 };
 
 type Props = {
@@ -18,14 +19,14 @@ export default function ClickList({ slug }: Props) {
 
   useEffect(() => {
     fetchClicksForSlug(slug).then((clicks) => setClicks(clicks));
-  }, []);
+  }, [slug]);
 
   const tableData: TableData = {
     head: ["Date & Time", "Browser", "IP"],
     body: clicks.map((click) => [
-      click.datetime.toString(),
-      click.client_browser,
-      click.client_ip_address,
+      dayjs(click.datetime).format("DD/MM/YYYY HH:mm"),
+      click.clientBrowser,
+      click.clientIpAddress,
     ]),
   };
 
