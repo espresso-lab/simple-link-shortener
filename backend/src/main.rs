@@ -72,7 +72,7 @@ async fn create_link(data: Data<AppState>, payload: web::Json<CreateLinkRequest>
         const CHARSET: &[u8] = b"1234567890abcdefghijklmnopqrstuvwxyz";
         let mut rng = rand::thread_rng();
         loop {
-            link.slug = (0..4)
+            link.slug = (0..6)
                 .map(|_| {
                     let idx = rng.gen_range(0..CHARSET.len());
                     CHARSET[idx] as char
