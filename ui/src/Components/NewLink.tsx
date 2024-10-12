@@ -32,7 +32,7 @@ export function NewLink({ onLinkCreated, ...props }: NewLinkProps) {
   return (
     <form
       onSubmit={form.onSubmit(({ url, slug }) => {
-        if (url && slug) {
+        if (url && next) {
           createLink({ url, slug })
             .then(() => {
               setNext(false);

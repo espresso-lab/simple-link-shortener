@@ -1,6 +1,6 @@
 mod models;
 
-use crate::models::links::{Link, LinkClickTracking, LinkWithSlugUrl};
+use crate::models::links::{Link, LinkClickTracking, LinkWithClicks, LinkWithSlugUrlAndClicks};
 use actix_cors::Cors;
 use actix_files as fs;
 use actix_web::middleware::Logger;
@@ -18,7 +18,7 @@ struct AppState {
 
 #[get("/links")]
 async fn get_links(data: Data<AppState>) -> impl Responder {
-    let result: Result<Vec<Link>, sqlx::Error> = sqlx::query_as(
+    let result: Result<Vec<LinkWithClicks>, sqlx::Error> = sqlx::query_as(
         "SELECT t1.*, COUNT(t2.datetime) as clicks FROM links t1
         LEFT JOIN link_click_tracking t2 ON t1.slug = t2.slug
         GROUP BY t1.slug",
@@ -28,15 +28,15 @@ async fn get_links(data: Data<AppState>) -> impl Responder {
 
     match result {
         Ok(links) => {
-            let links: Vec<LinkWithSlugUrl> = links
+            let links: Vec<LinkWithSlugUrlAndClicks> = links
                 .into_iter()
-                .map(|link| LinkWithSlugUrl {
-                    url_slug: format!("{}/{}", data.forward_url.trim_end_matches("/"), link.slug),
+                .map(|link| LinkWithSlugUrlAndClicks {
+                    url_slug: Some(format!("{}/{}", data.forward_url.trim_end_matches("/"), link.slug)),
                     slug: link.slug,
                     url: link.url,
                     created_at: link.created_at,
                     updated_at: link.updated_at,
-                    clicks: link.clicks,
+                    clicks: Some(link.clicks.unwrap_or(0)),
                 })
                 .collect();
             HttpResponse::Ok().json(links)
@@ -45,7 +45,7 @@ async fn get_links(data: Data<AppState>) -> impl Responder {
     }
 }
 
-#[get("/links/{slug}/clicks")]
+#[get("/links/{slug:.*}/clicks")]
 async fn get_link_clicks(data: Data<AppState>, path: web::Path<String>) -> impl Responder {
     let result: Result<Vec<LinkClickTracking>, sqlx::Error> =
         sqlx::query_as("SELECT * FROM link_click_tracking WHERE slug = $1")
@@ -60,23 +60,57 @@ async fn get_link_clicks(data: Data<AppState>, path: web::Path<String>) -> impl 
 }
 
 #[post("/links")]
-async fn create_link(data: Data<AppState>, payload: web::Json<Link>) -> impl Responder {
-    let link = payload.into_inner();
+async fn create_link(data: Data<AppState>, payload: web::Json<LinkWithSlugUrlAndClicks>) -> impl Responder {
+    let mut link = payload.into_inner();
 
-    let result: Result<_, sqlx::Error> =
-        sqlx::query("INSERT INTO links (slug, url) VALUES ($1, $2)")
+    if link.slug.is_empty() {
+        use rand::Rng;
+        const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ\
+                                abcdefghijklmnopqrstuvwxyz";
+        let mut rng = rand::thread_rng();
+        loop {
+            link.slug = (0..4)
+                .map(|_| {
+                    let idx = rng.gen_range(0..CHARSET.len());
+                    CHARSET[idx] as char
+                })
+                .collect();
+
+            let exists: Result<bool, sqlx::Error> =
+                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM links WHERE slug = $1)")
+                    .bind(&link.slug)
+                    .fetch_one(&data.db_pool)
+                    .await;
+
+            match exists {
+                Ok(false) => break,
+                Ok(true) => continue,
+                Err(err) => return HttpResponse::UnprocessableEntity().json(err.to_string()),
+            }
+        }
+    }
+
+    let result: Result<Link, sqlx::Error> =
+        sqlx::query_as("INSERT INTO links (slug, url) VALUES ($1, $2) RETURNING *")
             .bind(&link.slug)
             .bind(&link.url)
-            .execute(&data.db_pool)
+            .fetch_one(&data.db_pool)
             .await;
 
     match result {
-        Ok(_) => HttpResponse::Created().finish(),
+        Ok(link) => HttpResponse::Created().json(LinkWithSlugUrlAndClicks {
+            url_slug: Some(format!("{}/{}", data.forward_url.trim_end_matches("/"), link.slug)),
+            slug: link.slug,
+            url: link.url,
+            created_at: link.created_at,
+            updated_at: link.updated_at,
+            clicks: Some(0),
+        }),
         Err(err) => HttpResponse::UnprocessableEntity().json(err.to_string()),
     }
 }
 
-#[delete("/links/{slug}")]
+#[delete("/links/{slug:.*}")]
 async fn delete_link(data: Data<AppState>, path: web::Path<String>) -> impl Responder {
     let result: Result<_, sqlx::Error> = sqlx::query("DELETE FROM links WHERE slug = $1")
         .bind(path.into_inner())
@@ -192,7 +226,7 @@ async fn main() -> std::io::Result<()> {
         };
         let allowed_origins = env::var("CORS_ALLOWED_ORIGINS").unwrap_or("*".to_string());
         let cors = Cors::default()
-            .allowed_methods(vec!["OPTIONS", "GET", "POST"])
+            .allowed_methods(vec!["OPTIONS", "GET", "POST", "DELETE"])
             .allow_any_header()
             .allowed_origin_fn(move |origin, _| {
                 if allowed_origins == "*" {

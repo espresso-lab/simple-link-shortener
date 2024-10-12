@@ -8,14 +8,23 @@ pub struct Link {
     pub url: String,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
+}
+
+#[derive(Serialize, Deserialize, Debug, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkWithClicks {
+    pub slug: String,
+    pub url: String,
+    pub created_at: Option<NaiveDateTime>,
+    pub updated_at: Option<NaiveDateTime>,
     pub clicks: Option<i32>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
-pub struct LinkWithSlugUrl {
+pub struct LinkWithSlugUrlAndClicks {
     pub slug: String,
-    pub url_slug: String,
+    pub url_slug: Option<String>,
     pub url: String,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
