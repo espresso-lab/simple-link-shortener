@@ -2,7 +2,7 @@ const hostname =
   location.hostname === "localhost" ? "http://localhost:3000" : "";
 
 export interface CreateLinkRequest {
-  url: string;
+  targetUrl: string;
   slug: string;
 }
 export async function createLink(props: CreateLinkRequest) {

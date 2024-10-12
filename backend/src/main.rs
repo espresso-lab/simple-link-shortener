@@ -1,6 +1,6 @@
 mod models;
 
-use crate::models::links::{Link, LinkClickTracking, LinkWithClicks, LinkWithSlugUrlAndClicks};
+use crate::models::links::{CreateLinkRequest, Link, LinkClickTracking};
 use actix_cors::Cors;
 use actix_files as fs;
 use actix_web::middleware::Logger;
@@ -8,7 +8,7 @@ use actix_web::web::Data;
 use actix_web::{delete, get, post, rt, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use env_logger::Env;
 use sqlx::sqlite::SqlitePoolOptions;
-use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
+use sqlx::{migrate::MigrateDatabase, Error, Sqlite, SqlitePool};
 use std::env;
 use std::time::Duration;
 use actix_rt::time::sleep;
@@ -20,7 +20,7 @@ struct AppState {
 
 #[get("/links")]
 async fn get_links(data: Data<AppState>) -> impl Responder {
-    let result: Result<Vec<LinkWithClicks>, sqlx::Error> = sqlx::query_as(
+    let result: Result<Vec<Link>, Error> = sqlx::query_as(
         "SELECT t1.*, COUNT(t2.datetime) as clicks FROM links t1
         LEFT JOIN link_click_tracking t2 ON t1.slug = t2.slug
         GROUP BY t1.slug",
@@ -30,15 +30,16 @@ async fn get_links(data: Data<AppState>) -> impl Responder {
 
     match result {
         Ok(links) => {
-            let links: Vec<LinkWithSlugUrlAndClicks> = links
+            let links: Vec<Link> = links
                 .into_iter()
-                .map(|link| LinkWithSlugUrlAndClicks {
-                    url_slug: Some(format!("{}/{}", data.forward_url.trim_end_matches("/"), link.slug)),
+                .map(|link| Link {
+                    shortened_url: Some(format!("{}/{}", data.forward_url.trim_end_matches("/"), link.slug)),
                     slug: link.slug,
-                    url: link.url,
+                    target_url: link.target_url,
                     created_at: link.created_at,
                     updated_at: link.updated_at,
-                    clicks: Some(link.clicks.unwrap_or(0)),
+                    clicks: link.clicks,
+                    expires_at: link.expires_at
                 })
                 .collect();
             HttpResponse::Ok().json(links)
@@ -62,7 +63,7 @@ async fn get_link_clicks(data: Data<AppState>, path: web::Path<String>) -> impl 
 }
 
 #[post("/links")]
-async fn create_link(data: Data<AppState>, payload: web::Json<LinkWithSlugUrlAndClicks>) -> impl Responder {
+async fn create_link(data: Data<AppState>, payload: web::Json<CreateLinkRequest>) -> impl Responder {
     let mut link = payload.into_inner();
 
     if link.slug.is_empty() {
@@ -94,18 +95,19 @@ async fn create_link(data: Data<AppState>, payload: web::Json<LinkWithSlugUrlAnd
     let result: Result<Link, sqlx::Error> =
         sqlx::query_as("INSERT INTO links (slug, url) VALUES ($1, $2) RETURNING *")
             .bind(&link.slug)
-            .bind(&link.url)
+            .bind(&link.target_url)
             .fetch_one(&data.db_pool)
             .await;
 
     match result {
-        Ok(link) => HttpResponse::Created().json(LinkWithSlugUrlAndClicks {
-            url_slug: Some(format!("{}/{}", data.forward_url.trim_end_matches("/"), link.slug)),
+        Ok(link) => HttpResponse::Created().json(Link {
+            shortened_url: Some(format!("{}/{}", data.forward_url.trim_end_matches("/"), link.slug)),
             slug: link.slug,
-            url: link.url,
+            target_url: link.target_url,
             created_at: link.created_at,
             updated_at: link.updated_at,
-            clicks: Some(0),
+            expires_at: link.expires_at,
+            clicks: 0,
         }),
         Err(err) => HttpResponse::UnprocessableEntity().json(err.to_string()),
     }
@@ -140,40 +142,29 @@ async fn forward_link(
 ) -> impl Responder {
     let slug = path.into_inner();
 
-    let mut transaction = data.db_pool.begin().await.unwrap();
-
-    let result: Result<Option<String>, sqlx::Error> =
-        sqlx::query_scalar("SELECT url FROM links WHERE slug = $1")
+    let link: Result<Link, sqlx::Error> =
+        sqlx::query_as("SELECT * FROM links WHERE slug = $1")
             .bind(&slug)
-            .fetch_one(&mut transaction)
+            .fetch_one(&data.db_pool)
             .await;
 
-    match result {
-        Ok(Some(url)) => {
-            sqlx::query("INSERT INTO link_click_tracking (slug, client_ip_address, client_browser) VALUES ($1, $2, $3)")
-                .bind(&slug)
-                .bind(req.connection_info().realip_remote_addr().unwrap_or("unknown"))
-                .bind(get_header(&req, "User-Agent"))
-                .execute(&mut transaction)
-                .await
-                .unwrap();
-
-            transaction.commit().await.unwrap();
-
-            HttpResponse::TemporaryRedirect()
-                .append_header(("Location", url))
-                .append_header(("Referrer-Policy", "no-referrer"))
-                .finish()
-        }
-        Ok(None) => {
-            transaction.rollback().await.unwrap();
-            HttpResponse::NotFound().body("Link not found")
-        }
-        Err(err) => {
-            transaction.rollback().await.unwrap();
-            HttpResponse::InternalServerError().json(err.to_string())
-        }
+    if link.is_err() {
+        return HttpResponse::NotFound().body("Link not found")
     }
+
+    sqlx::query("INSERT INTO link_click_tracking (slug, client_ip_address, client_browser, expires_at) VALUES ($1, $2, $3, $4)")
+        .bind(&slug)
+        .bind(req.connection_info().realip_remote_addr().unwrap_or("unknown"))
+        .bind(get_header(&req, "User-Agent"))
+        .bind(link.as_ref().unwrap().expires_at)
+        .execute(&data.db_pool)
+        .await
+        .unwrap();
+
+    HttpResponse::TemporaryRedirect()
+        .append_header(("Location", link.unwrap().target_url))
+        .append_header(("Referrer-Policy", "no-referrer"))
+        .finish()
 }
 
 #[get("/status")]
@@ -274,17 +265,16 @@ async fn main() -> std::io::Result<()> {
 
     rt::spawn(async move {
         loop {
-            let result: Result<_, sqlx::Error> = sqlx::query("DELETE FROM links WHERE created_at < date('now', '-7 day')")
+            sqlx::query("DELETE FROM links WHERE expires_at < date('now')")
                 .execute(&pool_clone_cron)
-                .await;
+                .await.expect("Error cleaning up links");
 
-            match result {
-                Ok(_) => println!("Expired links deleted successfully."),
-                Err(err) => eprintln!("Failed to delete expired links: {:?}", err),
-            }
+            sqlx::query("DELETE FROM link_click_tracking WHERE expires_at < date('now')")
+                .execute(&pool_clone_cron)
+                .await.expect("Error cleaning up link_click_tracking");
 
             // Wait for 1 hour before checking again
-            sleep(Duration::from_secs(60 * 60)).await;
+            sleep(Duration::from_secs(3600)).await;
         }
     });
 

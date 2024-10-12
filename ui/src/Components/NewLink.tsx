@@ -21,19 +21,19 @@ export function NewLink({ onLinkCreated, ...props }: NewLinkProps) {
   const form = useForm({
     mode: "uncontrolled",
     initialValues: {
-      url: "",
+        targetUrl: "",
       slug: "",
     },
     validate: {
-      url: isNotEmpty(),
+        targetUrl: isNotEmpty(),
     },
   });
 
   return (
     <form
-      onSubmit={form.onSubmit(({ url, slug }) => {
-        if (url && next) {
-          createLink({ url, slug })
+      onSubmit={form.onSubmit(({ targetUrl, slug }) => {
+        if (targetUrl && next) {
+          createLink({ targetUrl, slug })
             .then(() => {
               setNext(false);
               form.reset();
@@ -53,7 +53,7 @@ export function NewLink({ onLinkCreated, ...props }: NewLinkProps) {
                 message: err.message,
               });
             });
-        } else if (url) {
+        } else if (targetUrl) {
           setNext(true);
         }
       })}
@@ -86,8 +86,8 @@ export function NewLink({ onLinkCreated, ...props }: NewLinkProps) {
           )
         }
         {...props}
-        key={form.key("url")}
-        {...form.getInputProps("url")}
+        key={form.key("targetUrl")}
+        {...form.getInputProps("targetUrl")}
       />
       {next && (
         <TextInput

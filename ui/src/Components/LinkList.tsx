@@ -27,8 +27,8 @@ dayjs.extend(localizedFormat);
 
 export interface Link {
   slug: string;
-  urlSlug: string;
-  url: string;
+  shortenedUrl: string;
+  targetUrl: string;
   createdAt: string;
   updatedAt: string;
   clicks: number;
@@ -56,12 +56,12 @@ export const LinkList = forwardRef(function LinkList() {
       </Table.Td>
       <Table.Td visibleFrom="md">
         <Box display="flex" style={{ alignItems: "center", gap: 3 }}>
-          <Tooltip label={link.url} multiline>
+          <Tooltip label={link.targetUrl} multiline>
             <Text size="sm" c="dimmed" lineClamp={1}>
-              {link.url}
+              {link.targetUrl}
             </Text>
           </Tooltip>
-          <CopyButton value={link.url} timeout={2000}>
+          <CopyButton value={link.targetUrl} timeout={2000}>
             {({ copied, copy }) => (
               <Tooltip
                 label={copied ? "Copied" : "Copy"}
@@ -106,9 +106,9 @@ export const LinkList = forwardRef(function LinkList() {
         >
           <Box display="flex" style={{ alignItems: "center" }}>
             <Box display="flex" style={{ alignItems: "center" }}>
-              {link.urlSlug}
+              {link.shortenedUrl}
             </Box>
-            <CopyButton value={link.urlSlug} timeout={2000}>
+            <CopyButton value={link.shortenedUrl} timeout={2000}>
               {({ copied, copy }) => (
                 <Tooltip
                   label={copied ? "Copied" : "Copy"}

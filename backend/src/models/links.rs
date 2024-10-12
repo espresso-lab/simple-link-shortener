@@ -1,34 +1,26 @@
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, sqlx::FromRow)]
+#[derive(Serialize, Deserialize, Debug, sqlx::FromRow, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Link {
     pub slug: String,
-    pub url: String,
-    pub created_at: Option<NaiveDateTime>,
-    pub updated_at: Option<NaiveDateTime>,
+    pub target_url: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+    #[sqlx(default)]
+    pub expires_at: Option<NaiveDateTime>,
+    pub clicks: i32,
+    #[sqlx(default)]
+    pub shortened_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
-pub struct LinkWithClicks {
+pub struct CreateLinkRequest {
     pub slug: String,
-    pub url: String,
-    pub created_at: Option<NaiveDateTime>,
-    pub updated_at: Option<NaiveDateTime>,
-    pub clicks: Option<i32>,
-}
-
-#[derive(Serialize, Deserialize, Debug, sqlx::FromRow)]
-#[serde(rename_all = "camelCase")]
-pub struct LinkWithSlugUrlAndClicks {
-    pub slug: String,
-    pub url_slug: Option<String>,
-    pub url: String,
-    pub created_at: Option<NaiveDateTime>,
-    pub updated_at: Option<NaiveDateTime>,
-    pub clicks: Option<i32>,
+    pub target_url: String,
+    pub expires_in_secs: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, sqlx::FromRow)]
