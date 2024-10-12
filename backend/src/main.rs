@@ -144,7 +144,7 @@ async fn forward_link(
     let slug = path.into_inner();
 
     let link: Result<Link, sqlx::Error> =
-        sqlx::query_as("SELECT * FROM links WHERE slug = $1")
+        sqlx::query_as("SELECT *, 0 as clicks FROM links WHERE slug = $1")
             .bind(&slug)
             .fetch_one(&data.db_pool)
             .await;
