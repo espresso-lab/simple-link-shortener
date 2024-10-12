@@ -5,11 +5,13 @@ use actix_cors::Cors;
 use actix_files as fs;
 use actix_web::middleware::Logger;
 use actix_web::web::Data;
-use actix_web::{delete, get, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web::{delete, get, post, rt, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use env_logger::Env;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use std::env;
+use std::time::Duration;
+use actix_rt::time::sleep;
 
 struct AppState {
     db_pool: SqlitePool,
@@ -65,8 +67,7 @@ async fn create_link(data: Data<AppState>, payload: web::Json<LinkWithSlugUrlAnd
 
     if link.slug.is_empty() {
         use rand::Rng;
-        const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ\
-                                abcdefghijklmnopqrstuvwxyz";
+        const CHARSET: &[u8] = b"1234567890abcdefghijklmnopqrstuvwxyz";
         let mut rng = rand::thread_rng();
         loop {
             link.slug = (0..4)
@@ -218,6 +219,7 @@ async fn main() -> std::io::Result<()> {
     }
 
     let pool_clone = pool.clone();
+    let pool_clone_cron = pool.clone();
 
     let api = HttpServer::new(move || {
         let app_state = AppState {
@@ -269,6 +271,22 @@ async fn main() -> std::io::Result<()> {
     })
         .bind("0.0.0.0:3001")?
         .run();
+
+    rt::spawn(async move {
+        loop {
+            let result: Result<_, sqlx::Error> = sqlx::query("DELETE FROM links WHERE created_at < date('now', '-7 day')")
+                .execute(&pool_clone_cron)
+                .await;
+
+            match result {
+                Ok(_) => println!("Expired links deleted successfully."),
+                Err(err) => eprintln!("Failed to delete expired links: {:?}", err),
+            }
+
+            // Wait for 1 hour before checking again
+            sleep(Duration::from_secs(60 * 60)).await;
+        }
+    });
 
     futures::try_join!(api, forwarder)?;
     Ok(())

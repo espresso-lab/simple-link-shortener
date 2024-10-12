@@ -26,3 +26,4 @@ confique = "0"
 chrono = { version = "0", features = ["serde"] }
 futures = "0.3.31"
 rand = "0.8.5"
+time = "0.3.36"
