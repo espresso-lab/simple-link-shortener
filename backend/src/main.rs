@@ -8,7 +8,7 @@ use actix_web::web::Data;
 use actix_web::{delete, get, post, rt, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use env_logger::Env;
 use sqlx::sqlite::SqlitePoolOptions;
-use sqlx::{migrate::MigrateDatabase, Error, Sqlite, SqlitePool};
+use sqlx::{migrate::MigrateDatabase, Error, Row, Sqlite, SqlitePool};
 use std::env;
 use std::time::Duration;
 use actix_rt::time::sleep;
@@ -93,8 +93,7 @@ async fn create_link(data: Data<AppState>, payload: web::Json<CreateLinkRequest>
         }
     }
 
-    let result: Result<Link, sqlx::Error> =
-        sqlx::query_as("INSERT INTO links (slug, target_url, expires_at) VALUES ($1, $2, $3) RETURNING *")
+    let result = sqlx::query("INSERT INTO links (slug, target_url, expires_at) VALUES ($1, $2, $3) RETURNING *")
             .bind(&link.slug)
             .bind(&link.target_url)
             .bind::<Option<i64>>(link.expires_in_secs.map(|u| Local::now().timestamp() + (u as i64)))
@@ -102,13 +101,13 @@ async fn create_link(data: Data<AppState>, payload: web::Json<CreateLinkRequest>
             .await;
 
     match result {
-        Ok(link) => HttpResponse::Created().json(Link {
+        Ok(result) => HttpResponse::Created().json(Link {
             shortened_url: Some(format!("{}/{}", data.forward_url.trim_end_matches("/"), link.slug)),
             slug: link.slug,
             target_url: link.target_url,
-            created_at: link.created_at,
-            updated_at: link.updated_at,
-            expires_at: link.expires_at,
+            created_at: result.get("created_at"),
+            updated_at: result.get("updated_at"),
+            expires_at: result.get("expires_at"),
             clicks: 0,
         }),
         Err(err) => HttpResponse::UnprocessableEntity().json(err.to_string()),
