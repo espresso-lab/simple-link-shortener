@@ -12,7 +12,7 @@ use sqlx::{migrate::MigrateDatabase, Error, Row, Sqlite, SqlitePool};
 use std::env;
 use std::time::Duration;
 use actix_rt::time::sleep;
-use chrono::{Local};
+use chrono::Utc;
 
 struct AppState {
     db_pool: SqlitePool,
@@ -96,7 +96,7 @@ async fn create_link(data: Data<AppState>, payload: web::Json<CreateLinkRequest>
     let result = sqlx::query("INSERT INTO links (slug, target_url, expires_at) VALUES ($1, $2, $3) RETURNING *")
             .bind(&link.slug)
             .bind(&link.target_url)
-            .bind::<Option<i64>>(link.expires_in_secs.map(|u| Local::now().timestamp() + (u as i64)))
+            .bind(link.expires_in_secs.map(|u| (Utc::now() + chrono::Duration::seconds(u as i64)).naive_utc()))
             .fetch_one(&data.db_pool)
             .await;
 
